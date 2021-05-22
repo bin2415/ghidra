@@ -764,6 +764,23 @@ int4 count_leading_zeros(uintb val)
   return bit;
 }
 
+/// counts the number of trailing zeroes of its argument 
+/// \param val is the given value
+/// \return the number of zero bits
+int4 count_trailing_zeros(uintb val)
+
+{
+  int y = ~val & (val -1);
+
+  int4 n = 0;
+
+  while (y != 0) {
+    n++;
+    y = y >> 1;
+  }
+
+  return n;
+}
 /// Return smallest number of form 2^n-1, bigger or equal to the given value
 /// \param val is the given value
 /// \return the mask

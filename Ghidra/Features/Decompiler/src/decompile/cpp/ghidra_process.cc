@@ -16,6 +16,11 @@
 #include "ghidra_process.hh"
 #include "flow.hh"
 #include "blockaction.hh"
+#include "interface.hh"
+// binpang. add. For debug
+#include <fstream>
+
+std::ofstream ofs ("/tmp/ghidra_debug2.log", std::ofstream::out);
 
 #ifdef __REMOTE_SOCKET__
 
@@ -286,6 +291,7 @@ void DecompileAt::rawAction(void)
 
 {
   Funcdata *fd = ghidra->symboltab->getGlobalScope()->queryFunction(addr);
+  ofs << "Decompile at, fd is " << fd << "; function addr is " << addr << "\n";
   if (fd == (Funcdata *)0) {
     ostringstream s;
     s << "Bad decompile address: " << addr.getShortcut();
@@ -490,6 +496,172 @@ int4 GhidraCapability::readCommand(istream &sin,ostream &out)
   return (*iter).second->doit();
 }
 
+bool analyzeRange::parseParameters(const Element* root)
+
+{
+  if (root->getName() != "range_query") {
+    return false;
+  }
+  seqnum = ~((uintm)0);
+
+  const List &list(root->getChildren());
+  List::const_iterator iter = list.begin();
+ 
+  while (iter != list.end()) {
+    const Element *el = *iter;
+    if (el->getName() == "addr") {
+      funcaddr = Address::restoreXml(el, ghidra);
+      funcaddr.toPhysical(); // Only for backward compatibility
+    } else if (el->getName() == "vn") {
+      const Element *vn_addr_el = el->getChildren()[0];
+      vnaddr = Address::restoreXml(vn_addr_el, ghidra);
+      vnaddr.toPhysical();
+      istringstream s1(el->getAttributeValue(0));
+      s1.unsetf(ios::dec | ios::hex | ios::oct);
+      s1 >> vnsize;
+    } else if (el->getName() == "defop") {
+      istringstream s2(el->getAttributeValue(0));
+      s2.unsetf(ios::dec | ios::hex | ios::oct);
+      s2 >> seqnum;
+    } else if (el->getName() == "inst_addr") {
+      const Element *inst_addr_el = el->getChildren()[0];
+      instaddr = Address::restoreXml(inst_addr_el, ghidra);
+      instaddr.toPhysical();
+    }
+    iter++;
+  }
+
+  ofs << "[Debug]: Function addr is " << funcaddr << "; vn addr is "
+      << vnaddr << "; size is " << vnsize << "; inst addr is " << instaddr 
+      << "; seq num is " << seqnum << "\n";
+  
+}
+
+
+// Find Varnode in Funcdata.
+// @param fd is the pointer of Funcdata
+// @return vn is the varnode that found
+Varnode* analyzeRange::findVn(Funcdata* fd)
+
+{
+  Varnode *vn = (Varnode*)0;
+
+  if (vnaddr.getSpace()->getType() == IPTR_CONSTANT) {
+    if (instaddr.isInvalid() || (seqnum) == ~((uintm)0)) 
+      throw IfaceParseError("Missing p-code sequence number");
+
+    SeqNum seq(instaddr, seqnum);
+    PcodeOp *op = fd->findOp(seq);
+
+    if (op != (PcodeOp *)0) {
+      for (int4 i = 0; i < op->numInput(); ++i) {
+        Varnode *tmpvn = op->getIn(i);
+        if (tmpvn->getAddr() == vnaddr) {
+          vn = tmpvn;
+          break;
+        }
+      }
+    }
+  } 
+  else if (instaddr.isInvalid() && (seqnum == ~((uintm)0)))
+    vn = fd->findVarnodeInput(vnsize, vnaddr);
+  else if ((!instaddr.isInvalid() && (seqnum != ~((uintm)0)))) 
+    vn = fd->findVarnodeWritten(vnsize, vnaddr, instaddr, seqnum);
+  else {
+    VarnodeLocSet::const_iterator iter, enditer;
+    iter = fd->beginLoc(vnsize, vnaddr);
+    enditer = fd->endLoc(vnsize, vnaddr);
+    while (iter != enditer) {
+      vn = *iter++;
+      if (vn->isFree()) continue;
+      if (vn->isWritten()) {
+        if ((!instaddr.isInvalid()) && (vn->getDef()->getAddr() == instaddr))
+          break;
+        if (seqnum != ~((uintm)0) && (vn->getDef()->getTime() == seqnum))
+          break;
+      }
+    }
+  }
+
+
+  if (vn == (Varnode *)0)
+    throw IfaceExecutionError("Requested varnode does not exist");
+  return vn;
+}
+
+void analyzeRange::loadParameters(void)
+
+{
+  GhidraCommand::loadParameters();
+  Document *doc;
+  doc = ArchitectureGhidra::readXMLStream(sin); // Read XML of varnode
+  parseParameters(doc->getRoot());
+  delete doc;
+}
+
+void analyzeRange::rawAction(void)
+
+{
+  Funcdata *fd = ghidra->symboltab->getGlobalScope()->queryFunction(funcaddr);
+  Varnode *vn = (Varnode*)0;
+
+  ofs << "analyze range fd is " << fd << "; function address is " << funcaddr << "\n";
+
+  if (fd == (Funcdata *)0) {
+    ostringstream s;
+    s << "Bad function address of range analysis: " << funcaddr.getShortcut();
+    funcaddr.printRaw(s);
+    s << "\n";
+    s << funcaddr.getSpace()->getName() << " may not be a global space in the spec file.";
+
+    throw LowlevelError(s.str());
+  }
+
+  if (!fd->isProcStarted()) {
+    ghidra->allacts.getCurrent()->reset( *fd );
+    ghidra->allacts.getCurrent()->perform( *fd );
+  }
+
+  sout.write("\000\000\001\016", 4);
+  if (fd->isProcComplete()){
+    vn = findVn(fd);
+    ofs << "[Debug]: current vn is " << vn << "\n";
+
+    ValueSetSolver vs_solver;
+    vector<Varnode *> sinks;
+    vector<PcodeOp *> reads;
+    sinks.push_back(vn);
+    Varnode *stack_reg = fd->findSpacebaseInput(fd->getArch()->getStackSpace());
+    
+    vs_solver.establishValueSets(sinks, reads, stack_reg, true);
+
+    WidenerFull widener;
+    vs_solver.solve(10000, widener);
+
+    list<ValueSet>::const_iterator iter;
+
+    ofs << "Current vn is ";
+    vn->printRaw(ofs);
+    ofs << "\n";
+    
+    for (iter = vs_solver.beginValueSets(); iter != vs_solver.endValueSets(); ++iter) {
+      if ((*iter).getVarnode() == vn) {
+        (*iter).printRaw(ofs);
+        ofs << std::endl;
+        CircleRange cur_range = (*iter).getRange();
+        sout << "<circleRange ";
+        sout << "left=\"0x" << std::hex << cur_range.getMin() << "\" ";
+        sout << "right=\"0x" << std::hex << cur_range.getEnd() << "\" ";
+        sout << "step=\"0x" << std::hex << cur_range.getStep() << "\" />\n";
+        // sout << "mask=\"0x" << std::hex << cur_range.getMask() << "\" />\n";
+        break;
+      }
+      
+    }   
+  }
+  sout.write("\000\000\001\017",4);
+}
+
 void GhidraCapability::shutDown(void)
 
 {
@@ -508,6 +680,7 @@ void GhidraDecompCapability::initialize(void)
   commandmap["structureGraph"] = new StructureGraph();
   commandmap["setAction"] = new SetAction();
   commandmap["setOptions"] = new SetOptions();
+  commandmap["analyzeRange"] = new analyzeRange();
 }
 
 int main(int argc,char **argv)

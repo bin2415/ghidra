@@ -34,6 +34,7 @@ import ghidra.program.model.pcode.*;
 import ghidra.util.task.CancelledListener;
 import ghidra.util.task.TaskMonitor;
 import ghidra.xml.XmlPullParser;
+import ghidra.util.xml.SpecXmlUtils;
 
 /**
  * This is a self-contained interface to a single decompile
@@ -686,6 +687,76 @@ public class DecompInterface {
 		return resgraph;
 	}
 
+	/** 
+	 *  analyzeRange Function
+	 * @param varnode varnodes to be analyzed
+	 * @param timeoutSecs if analyzer does not finish in this time. a null
+	 * value will be returned and a timeout error set.
+	 * @param monitor optional task monitor which may be used to cancel decompile
+	 * @return void for now
+	*/
+	public synchronized CircleRange analyzeRange(Varnode vn, Function func, int timeoutSecs, 
+			TaskMonitor monitor) {
+		
+		if (monitor != null && monitor.isCancelled()) {
+			return null;
+		}
+		if (vn.getDef() == null) {
+			return null;
+		}
+
+        LimitedByteBuffer res = null;
+		PcodeOp defOp = vn.getDef();
+		vn = defOp.getOutput();
+		SequenceNumber seq = defOp.getSeqnum();
+		StringBuilder vnBuf = new StringBuilder();
+        vnBuf.append("<range_query>");
+		AddressXML.buildXML(vnBuf, func.getEntryPoint());
+		vnBuf.append("<vn");
+		SpecXmlUtils.encodeSignedIntegerAttribute(vnBuf, "size", vn.getSize());
+		vnBuf.append(">");
+		AddressXML.buildXML(vnBuf, vn.getAddress());
+		vnBuf.append("</vn_addr>");
+		vnBuf.append("<defop");
+		SpecXmlUtils.encodeSignedIntegerAttribute(vnBuf, "uniq", seq.getTime());
+		vnBuf.append("/>");
+		vnBuf.append("<inst_addr>");
+		AddressXML.buildXML(vnBuf, seq.getTarget());
+		vnBuf.append("</inst_addr>");
+		vnBuf.append("</range_query>");
+
+		try {
+			verifyProcess();
+			res = decompProcess.sendCommand1ParamTimeout("analyzeRange", vnBuf.toString(),
+				timeoutSecs);
+		}
+		catch (Exception ex)
+		{
+			decompileMessage += "Exception while decompiling " + vn.getAddress() + ": " +
+				ex.getMessage() + '\n';
+			return null;
+		}
+
+		InputStream stream = null;
+		if (res != null) {
+			stream = res.getInputStream();
+		}
+
+		// StringBuilder sb = new StringBuilder();
+		// try{
+		// if (stream != null) {
+		// 	for (int ch; (ch = stream.read()) != -1;) {
+		// 		sb.append((char) ch);
+		// 	}
+		// } 
+		// decompileMessage += sb.toString();
+		// } catch(IOException ex) {
+		// 	decompileMessage += "Stream error!";
+		// }
+
+		return new CircleRange(stream);
+		
+	}
 	/**
 	 * Decompile function
 	 * @param func function to be decompiled

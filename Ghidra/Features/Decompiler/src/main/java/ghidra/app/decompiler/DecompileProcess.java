@@ -407,7 +407,7 @@ public class DecompileProcess {
 					buf = null;
 					break;
 				default:
-					throw new IOException("GHIDRA/decompiler alignment error");
+					throw new IOException("GHIDRA/decompiler alignment error " + type);
 
 			}
 			if (buf == null) {

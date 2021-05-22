@@ -15,6 +15,7 @@
  */
 #include "rangeutil.hh"
 #include "block.hh"
+#include <fstream>
 
 const char CircleRange::arrange[] = "gcgbegdagggggggeggggcgbggggggggcdfgggggggegdggggbgggfggggcgbegda";
 
@@ -269,6 +270,213 @@ uintb CircleRange::getSize(void) const
     }
   }
   return val;
+}
+
+/// Calculate the left bound of operation `OR`
+/// 
+/// \param lefta is the left bound of given first operator
+/// \param righta is the right bound of given first operator
+/// \param leftb is the left bound of given second operator
+/// \param rightb is the right bound of given second operator
+/// \return the left bound after `OR`
+uintb CircleRange::minOr(uintb lefta, uintb righta, uintb leftb, uintb rightb) 
+
+{
+  uintb m = 0x0;
+  uintb temp;
+
+  if (sizeof(uintb) == 4) {
+    m = 0x80000000;
+  } else if (sizeof(uintb) == 8) {
+    m = 0x8000000000000000;
+  }
+
+  while (m != 0) {
+   if (lefta & ~leftb & m) {
+      temp = (leftb | m) & (-m);
+      if (temp <= rightb) {
+        leftb = temp;
+        break;
+      }
+    }  else if (~lefta & leftb & m) {
+      temp = (lefta | m) & (-m);
+
+      if (temp <= righta) {
+        lefta = temp;
+        break;
+      }
+    } 
+    m = m >> 1;
+  }
+
+  return lefta | leftb;
+}
+
+/// Calculate the right bound of operation `OR`
+/// 
+/// \param lefta is the left bound of given first operator
+/// \param righta is the right bound of given first operator
+/// \param leftb is the left bound of given second operator
+/// \param rightb is the right bound of given second operator
+/// \return the right bound after `OR`
+uintb CircleRange::maxOr(uintb lefta, uintb righta, uintb leftb, uintb rightb) 
+
+{
+  uintb m = 0x0;
+  uintb temp;
+
+  if (sizeof(uintb) == 4) {
+    m = 0x80000000;
+  } else if (sizeof(uintb) == 8) {
+    m = 0x8000000000000000;
+  }
+
+  while (m != 0) {
+    if (righta & rightb & m) {
+      temp = (righta - m) | (m - 1);
+
+      if (temp >= lefta) {
+        righta = temp;
+        break;
+      }
+
+      temp = (rightb - m) | (m - 1);
+
+      if (temp >= leftb) {
+        rightb = temp;
+        break;
+      }
+    }
+    m = m >> 1;
+  }
+
+  return righta | rightb;
+}
+
+
+int4 CircleRange::andOperator(const CircleRange &op2)
+
+{
+  CircleRange tmp_range1 = *this, tmp_range2 = op2;
+
+  tmp_range2.negateOperator(op2);
+
+  if (tmp_range1.orOperator(tmp_range2)) {
+    return 2;    // could handle correctly
+  }
+
+  negateOperator(tmp_range1);
+
+  mask = mask & op2.mask;
+  left &= mask;
+  right &= mask;
+
+  return 0;
+}
+
+int4 CircleRange::xorOperator(const CircleRange &op2) 
+
+{
+  if (mask != op2.mask) {
+    return 2;
+  }
+  CircleRange tmp_range1 = *this, tmp_range2 = op2;
+
+  tmp_range1.negateOperator(*this);
+  if (tmp_range1.orOperator(op2)) {
+    return 2;
+  }
+  tmp_range1.negateOperator(tmp_range1);
+
+  tmp_range2.negateOperator(op2);
+  if (tmp_range2.orOperator(*this)) {
+    return 2;
+  }
+  tmp_range2.negateOperator(tmp_range2);
+
+  if (tmp_range1.orOperator(tmp_range2)) {
+    return 2;
+  }
+
+  *this = tmp_range1;
+  return 0;
+}
+
+
+
+/// Return 0 if the result is vaild
+/// Return 2 if the result is null
+/// \return the result code
+int4 CircleRange::orOperator(const CircleRange &op2) 
+
+{
+  if (op2.isempty) {
+   isempty = true; 
+   return 2;
+  }
+
+  if (isempty) {
+    return 2;
+  }
+
+  if (op2.isFull()){
+    step = 1;
+    left = 0;
+    right = 0;
+    isempty = false;
+  }
+
+  if (isFull()) {
+    return 2;
+  }
+
+  mask = mask | op2.mask;
+
+  int4 s1_zeros = count_trailing_zeros((uintb)step);
+  int4 s2_zeros = count_trailing_zeros((uintb)op2.step);
+
+  int4 t = 0;
+  
+  // if these exists only one element in at least one CircleRange
+  // choose the maxium
+  if (isSingle() || op2.isSingle()) {
+    t =  (s1_zeros < s2_zeros) ? s2_zeros : s1_zeros;
+  } else { 
+    t = (s1_zeros < s2_zeros) ? s1_zeros : s2_zeros;
+  }
+
+  step = 1;   // the new step
+  int4 tmp_idx = 0;
+
+  while (tmp_idx < t) {
+    step *= 2;
+    tmp_idx++;
+  }
+
+  uintb tmp_mask = (1 << t) - 1;
+  uintb loworderbits = (left & tmp_mask) | (op2.left & tmp_mask);
+
+  uintb lb = minOr(left&~tmp_mask, (right-1)&~tmp_mask, op2.left&~tmp_mask, (op2.right-1)&~tmp_mask);
+  uintb ub = maxOr(left&~tmp_mask, (right-1)&~tmp_mask, op2.left&~tmp_mask, (op2.right-1)&~tmp_mask);
+
+  left = (lb & ~tmp_mask) | loworderbits;
+  right = ((ub+1) & ~tmp_mask) | loworderbits;
+
+  left &= mask;
+  right &= mask;
+
+  return 0; 
+}
+
+/// Return 2 if the result is null
+/// \return the result code
+void CircleRange::negateOperator(const CircleRange &op1)
+
+{
+  step = op1.step;
+  mask = op1.mask;
+  left = (~op1.right) & mask;
+  right = (~op1.left) & mask;
 }
 
 /// In this context, the information content of a value is the index (+1) of the
@@ -802,7 +1010,6 @@ bool CircleRange::pullBackBinary(OpCode opc,uintb val,int4 slot,int4 inSize,int4
 
   // If there is nothing in the output set, no input will map to it
   if (isempty) return true;
-
   switch(opc) {
     case CPUI_INT_EQUAL:
       bothTrueFalse = convertToBoolean();
@@ -1133,8 +1340,8 @@ bool CircleRange::pushForwardUnary(OpCode opc,const CircleRange &in1,int4 inSize
       isempty = false;
       step = in1.step;
       mask = in1.mask;
-      left = -in1.right & mask;
-      right = -in1.left & mask;
+      left = (~in1.right + step) & mask;
+      right = (~in1.left + step) & mask;
       normalize();
       break;
     case CPUI_BOOL_NEGATE:
@@ -1169,7 +1376,41 @@ bool CircleRange::pushForwardBinary(OpCode opc,const CircleRange &in1,const Circ
     isempty = true;
     return true;
   }
+
+  CircleRange tmp_range;
   switch(opc) {
+    case CPUI_INT_SUB:
+      isempty = false;
+      mask = in1.mask | in2.mask;
+      tmp_range.pushForwardUnary(CPUI_INT_2COMP, in2, sizeof(intb), sizeof(intb));
+       if (in1.left == in1.right || tmp_range.left == tmp_range.right) {
+	step = (in1.step < tmp_range.step) ? in1.step : tmp_range.step;	// Smaller step
+	left = (in1.left + tmp_range.left) % step;
+	right = left;
+      }
+      else if (tmp_range.isSingle()) {
+	step = in1.step;
+	left = (in1.left + tmp_range.left) & mask;
+	right = (in1.right + tmp_range.left) & mask;
+      }
+      else if (in1.isSingle()) {
+	step = tmp_range.step;
+	left = (tmp_range.left + in1.left) & mask;
+	right = (tmp_range.right +in1.left) & mask;
+      }
+      else {
+	step = (in1.step < tmp_range.step) ? in1.step : tmp_range.step;	// Smaller step
+	uintb size1 = (in1.left < in1.right) ? (in1.right-in1.left) : (in1.mask - (in1.left-in1.right) + in1.step);
+	left = (in1.left + tmp_range.left) & mask;
+	right = (in1.right - in1.step + tmp_range.right - tmp_range.step + step) & mask;
+	uintb sizenew = (left < right) ? (right-left) : (mask - (left-right) + step);
+	if (sizenew < size1) {
+	  right = left;	// Over-flow, we covered everything
+	}
+	normalize();
+      }
+      break;
+
     case CPUI_PTRSUB:
     case CPUI_INT_ADD:
       isempty = false;
@@ -1346,6 +1587,31 @@ bool CircleRange::pushForwardBinary(OpCode opc,const CircleRange &in1,const Circ
       left = 0;		// Both true and false are possible
       right = 2;
       break;
+    case CPUI_INT_AND:
+      // tmp_binpang = in1.left;
+      tmp_range = in1;
+      
+      if (tmp_range.andOperator(in2)) {
+        return false;
+      }
+      *this = tmp_range;
+      break;
+    case CPUI_INT_OR:
+      tmp_range = in1;
+      if (tmp_range.orOperator(in2)) {
+        return false;
+      }
+      *this = tmp_range;
+      break;
+    
+    case CPUI_INT_XOR:
+      tmp_range = in1;
+      if (tmp_range.xorOperator(in2)) {
+        return false;
+      }
+      *this = tmp_range;
+      break;
+
     default:
       return false;
   }
@@ -1605,6 +1871,7 @@ bool ValueSet::iterate(Widener &widener)
       return true;
     }
   }
+  
   count += 1;		// Count this iteration
   CircleRange res;
   PcodeOp *op = vn->getDef();

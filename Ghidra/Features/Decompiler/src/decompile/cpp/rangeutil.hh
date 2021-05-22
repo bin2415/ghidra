@@ -96,6 +96,13 @@ public:
   void widen(const CircleRange &op2,bool leftIsStable);	///< Widen the unstable bound to match containing range
   int4 translate2Op(OpCode &opc,uintb &c,int4 &cslot) const;	///< Translate range to a comparison op
   void printRaw(ostream &s) const;		///< Write a text representation of \b this to stream
+
+  uintb minOr(uintb lefta, uintb righta, uintb leftb, uintb rightb);
+  uintb maxOr(uintb lefta, uintb righta, uintb leftb, uintb rightb);
+  int4 orOperator(const CircleRange &op2);
+  int4 andOperator(const CircleRange &op2);
+  void negateOperator(const CircleRange &op2);
+  int4 xorOperator(const CircleRange &op2);
 };
 
 class Partition;		// Forward declaration

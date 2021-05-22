@@ -156,6 +156,21 @@ public:
   virtual void rawAction(void);
 };
 
+/// \brief Command to \b analyze range of a varnode
+///
+class analyzeRange : public GhidraCommand {
+  Address funcaddr;
+  Address vnaddr;
+  Address instaddr;
+  uintb vnsize;
+  uintb seqnum;
+  bool parseParameters(const Element*);
+  Varnode* findVn(Funcdata*);
+  virtual void loadParameters(void);
+public:
+  virtual void rawAction(void);
+};
+
 /// \brief Command to \b structure a control-flow graph.
 ///
 /// An arbitrary control-flow is sent as a \<block> tag, with nested

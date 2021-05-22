@@ -11,6 +11,7 @@ wrapper.log*
 Thumbs.db
 .DS_Store
 .svn
+.vscode/*
 
 /*/*/*/*/*/bin/
 /*/*/*/*/*/build/
