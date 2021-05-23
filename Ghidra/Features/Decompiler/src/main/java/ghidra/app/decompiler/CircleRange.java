@@ -136,9 +136,21 @@ public class CircleRange {
                     
                 };
             }
-
+    
+    /**
+    * Check if the range is a completely full range
+    * 
+    * @return true if the range is a completely full range
+    */
     public boolean isFull() {
         return (this.isfull || this.left == this.right);
+    }
+
+    /**
+     * @return true if this contains a single value
+     */
+    public boolean isSingle() {
+        return (!isempty) && (right == ((left + step) & mask));
     }
 
     public String toString() {
@@ -158,5 +170,63 @@ public class CircleRange {
 
         return result;
     }
-}
 
+    /**
+     * Get the left boundary of the range
+     * 
+     * @return `left` is the left boundary of the range
+     */
+    public long getMin() {
+        return this.left;
+    }
+
+    /**
+     * Get the right-most integer contained in the range
+     * 
+     * @return the right-most integer
+     */
+    public long getMax() {
+        return (this.right - this.step) & this.mask;
+    }
+
+    /**
+     * Get the right boundary of the range
+     * 
+     * @return the right boundary of the range
+     */
+    public long getEnd() {
+        return this.right;
+    }
+
+    /**
+     * Get the mask
+     * 
+     * @return the mask
+     */
+    public long getMask() {
+        return this.mask;
+    }
+
+    /**
+     * Check if a specific integer is a member of this range
+     * @param val is the specific integer
+     * @return true if it is contained in this range
+     */
+    public boolean contains(long val) {
+        if (this.isempty) return false;
+
+    
+        if (this.step != 1 && (this.left % this.step) != (val % this.step))
+            return false;
+
+        if (this.left < this.right) {
+            if (val < this.left) return false;
+            if (val >= this.right) return false;
+        } else if (this.right < this.left) {
+            if (val < this.right) return true;
+            if (val >= this.left) return true;
+            return false;
+        }
+        return true;
+    }
+}
