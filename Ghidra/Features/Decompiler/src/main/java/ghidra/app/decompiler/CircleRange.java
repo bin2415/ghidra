@@ -40,7 +40,7 @@ public class CircleRange {
     private long left;
     private long right;
     private long step;
-    // private long mask;
+    private long mask;
     private boolean isfull;
     private boolean isempty;
 
@@ -62,7 +62,7 @@ public class CircleRange {
         String leftStr = null;
         String rightStr = null;
         String stepStr = null;
-        // String maskStr = null;
+        String maskStr = null;
 
         if (el == null) {
             this.isempty = true;
@@ -72,17 +72,17 @@ public class CircleRange {
         leftStr = el.getAttribute("left");
         rightStr = el.getAttribute("right");
         stepStr = el.getAttribute("step");
-        // maskStr = el.getAttribute("mask");
+        maskStr = el.getAttribute("mask");
 
         if (leftStr == null || rightStr == null || stepStr == null) {
             this.isempty = true;
             return;
         }
 
-        this.left = Long.decode(leftStr);
-        this.right = Long.decode(rightStr);
-        this.step = Long.decode(stepStr);
-        // this.mask = Long.decode(maskStr);
+        this.left = Long.parseUnsignedLong(leftStr);
+        this.right = Long.parseUnsignedLong(rightStr);
+        this.step = Long.parseUnsignedLong(stepStr);
+        this.mask = Long.parseUnsignedLong(maskStr);
         this.isempty = false;
         
         if (this.left == this.right) {
@@ -93,11 +93,11 @@ public class CircleRange {
 
     }
 
-    public CircleRange(long l, long r, long s) {
+    public CircleRange(long l, long r, long s, long m) {
         this.left = l;
         this.right = r;
         this.step = s;
-        // this.mask = m;
+        this.mask = m;
         if (l == r) {
             this.isfull = true;
         } else {
@@ -110,7 +110,7 @@ public class CircleRange {
         this.left = c2.left;
         this.right = c2.right;
         this.step = c2.step;
-        // this.mask = c2.mask;
+        this.mask = c2.mask;
         this.isempty = c2.isempty;
         this.isfull = c2.isfull;
     }
@@ -149,11 +149,11 @@ public class CircleRange {
         }
         
         result += "[";
-        result += this.left;
+        result += Long.toHexString(this.left);
         result += ",";
-        result += this.right;
+        result += Long.toHexString(this.right);
         result += ",";
-        result += this.step;
+        result += Long.toHexString(this.step);
         result += ")";
 
         return result;

@@ -650,10 +650,10 @@ void analyzeRange::rawAction(void)
         ofs << std::endl;
         CircleRange cur_range = (*iter).getRange();
         sout << "<circleRange ";
-        sout << "left=\"0x" << std::hex << cur_range.getMin() << "\" ";
-        sout << "right=\"0x" << std::hex << cur_range.getEnd() << "\" ";
-        sout << "step=\"0x" << std::hex << cur_range.getStep() << "\" />\n";
-        // sout << "mask=\"0x" << std::hex << cur_range.getMask() << "\" />\n";
+        sout << "left=\"" << cur_range.getMin() << "\" ";
+        sout << "right=\"" << cur_range.getEnd() << "\" ";
+        sout << "step=\"" << cur_range.getStep() << "\" ";
+        sout << "mask=\"" << cur_range.getMask() << "\" />\n";
         break;
       }
       
